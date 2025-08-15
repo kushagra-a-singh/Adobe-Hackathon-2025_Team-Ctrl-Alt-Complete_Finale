@@ -1986,6 +1986,9 @@ async function main() {
   if (pb) { pb.disabled = true; pb.addEventListener('click', podcast); }
   setupToolbar();
 
+  // Initialize audio player
+  initializeAudioPlayer();
+
   // Theme
   initTheme();
   const themeToggle = document.getElementById('themeToggle');
@@ -2140,7 +2143,58 @@ async function createPodcastFromTextSelection() {
 
     if (result.url) {
       showNotification('Podcast generated successfully!', 'success');
-      loadAudio(result.url, `Podcast: ${textSelectionInsights.selected_text.substring(0, 50)}...`);
+
+      // Set up the audio player with new source
+      const player = document.getElementById('player');
+      const audioUrl = result.url + '?t=' + Date.now(); // Add timestamp to prevent caching
+
+      player.src = audioUrl;
+      player.setAttribute('title', `Podcast: ${textSelectionInsights.selected_text.substring(0, 50)}...`);
+
+      // Reset audio player initialization to ensure proper setup
+      resetAudioPlayerInitialization();
+
+      // Initialize audio player UI before loading
+      initializeAudioPlayer();
+
+      // Clear any existing audio info
+      const audioInfo = document.getElementById('audioInfo');
+      const audioTitle = document.getElementById('audioTitle');
+      if (audioInfo) audioInfo.classList.add('hidden');
+      if (audioTitle) audioTitle.textContent = 'Loading podcast...';
+
+      // Wait for audio to load metadata
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error('Audio loading timeout'));
+        }, 15000); // 15 second timeout
+
+        player.addEventListener('loadedmetadata', () => {
+          clearTimeout(timeout);
+          resolve();
+        }, { once: true });
+
+        player.addEventListener('error', (e) => {
+          clearTimeout(timeout);
+          reject(new Error(`Audio loading failed: ${e.message || 'Unknown error'}`));
+        }, { once: true });
+
+        player.load(); // Force load
+      });
+
+      // Play the podcast
+      await player.play();
+
+      // Update UI to show it's playing
+      const playPauseBtn = document.getElementById('playPauseBtn');
+      if (playPauseBtn) {
+        const icon = playPauseBtn.querySelector('i');
+        if (icon) icon.className = 'fas fa-pause text-sm';
+      }
+
+      if (audioInfo) audioInfo.classList.remove('hidden');
+      if (audioTitle) audioTitle.textContent = `Podcast: ${textSelectionInsights.selected_text.substring(0, 50)}...`;
+
     } else {
       showNotification('Failed to generate podcast', 'error');
     }
@@ -2520,6 +2574,216 @@ function loadAudio(url, title = 'Audio') {
     audio.play().catch(e => console.log('Auto-play prevented:', e));
     toast(`Playing audio: ${title}`, 'info');
   }
+}
+
+// Audio Player Initialization Functions
+function resetAudioPlayerInitialization() {
+  const player = document.getElementById('player');
+  if (!player) return;
+
+  // Remove existing event listeners to prevent duplicates
+  player.removeEventListener('loadedmetadata', updateAudioDuration);
+  player.removeEventListener('timeupdate', updateAudioProgress);
+  player.removeEventListener('play', updatePlayPauseButton);
+  player.removeEventListener('pause', updatePlayPauseButton);
+  player.removeEventListener('ended', handleAudioEnded);
+  player.removeEventListener('error', handleAudioError);
+
+  // Reset UI elements
+  const currentTimeEl = document.getElementById('currentTime');
+  const totalTimeEl = document.getElementById('totalTime');
+  const progressEl = document.getElementById('audioProgress');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+
+  if (currentTimeEl) currentTimeEl.textContent = '0:00';
+  if (totalTimeEl) totalTimeEl.textContent = '0:00';
+  if (progressEl) progressEl.style.width = '0%';
+  if (playPauseBtn) {
+    const icon = playPauseBtn.querySelector('i');
+    if (icon) icon.className = 'fas fa-play text-sm';
+  }
+}
+
+function initializeAudioPlayer() {
+  const player = document.getElementById('player');
+  if (!player) {
+    console.error('Audio player element not found');
+    return;
+  }
+
+  // Set up event listeners for audio player
+  player.addEventListener('loadedmetadata', updateAudioDuration);
+  player.addEventListener('timeupdate', updateAudioProgress);
+  player.addEventListener('play', updatePlayPauseButton);
+  player.addEventListener('pause', updatePlayPauseButton);
+  player.addEventListener('ended', handleAudioEnded);
+  player.addEventListener('error', handleAudioError);
+
+  // Set up control button event listeners
+  setupAudioControls();
+
+  console.log('Audio player initialized successfully');
+}
+
+function setupAudioControls() {
+  // Play/Pause button
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  if (playPauseBtn) {
+    playPauseBtn.removeEventListener('click', togglePlayPause);
+    playPauseBtn.addEventListener('click', togglePlayPause);
+  }
+
+  // Stop button
+  const stopBtn = document.getElementById('stopBtn');
+  if (stopBtn) {
+    stopBtn.removeEventListener('click', stopAudio);
+    stopBtn.addEventListener('click', stopAudio);
+  }
+
+  // Speed button
+  const speedBtn = document.getElementById('speedBtn');
+  if (speedBtn) {
+    speedBtn.removeEventListener('click', cyclePlaybackSpeed);
+    speedBtn.addEventListener('click', cyclePlaybackSpeed);
+  }
+
+  // Progress bar
+  const progressContainer = document.getElementById('progressContainer');
+  if (progressContainer) {
+    progressContainer.removeEventListener('click', seekAudio);
+    progressContainer.addEventListener('click', seekAudio);
+  }
+}
+
+function updateAudioDuration() {
+  const player = document.getElementById('player');
+  const totalTimeEl = document.getElementById('totalTime');
+
+  if (player && totalTimeEl && !isNaN(player.duration)) {
+    totalTimeEl.textContent = formatTime(player.duration);
+  }
+}
+
+function updateAudioProgress() {
+  const player = document.getElementById('player');
+  const currentTimeEl = document.getElementById('currentTime');
+  const progressEl = document.getElementById('audioProgress');
+
+  if (player && !isNaN(player.currentTime) && !isNaN(player.duration)) {
+    if (currentTimeEl) {
+      currentTimeEl.textContent = formatTime(player.currentTime);
+    }
+
+    if (progressEl) {
+      const progress = (player.currentTime / player.duration) * 100;
+      progressEl.style.width = `${progress}%`;
+    }
+  }
+}
+
+function updatePlayPauseButton() {
+  const player = document.getElementById('player');
+  const playPauseBtn = document.getElementById('playPauseBtn');
+
+  if (player && playPauseBtn) {
+    const icon = playPauseBtn.querySelector('i');
+    if (icon) {
+      icon.className = player.paused ? 'fas fa-play text-sm' : 'fas fa-pause text-sm';
+    }
+  }
+}
+
+function handleAudioEnded() {
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  if (playPauseBtn) {
+    const icon = playPauseBtn.querySelector('i');
+    if (icon) icon.className = 'fas fa-play text-sm';
+  }
+
+  // Reset progress
+  const progressEl = document.getElementById('audioProgress');
+  if (progressEl) progressEl.style.width = '0%';
+
+  const currentTimeEl = document.getElementById('currentTime');
+  if (currentTimeEl) currentTimeEl.textContent = '0:00';
+}
+
+function handleAudioError(event) {
+  console.error('Audio error:', event);
+  toast('Error playing audio. Please try again.', 'error');
+}
+
+function togglePlayPause() {
+  const player = document.getElementById('player');
+  if (!player) return;
+
+  if (player.paused) {
+    player.play().catch(e => {
+      console.error('Error playing audio:', e);
+      toast('Error playing audio. Please try again.', 'error');
+    });
+  } else {
+    player.pause();
+  }
+}
+
+function stopAudio() {
+  const player = document.getElementById('player');
+  if (!player) return;
+
+  player.pause();
+  player.currentTime = 0;
+
+  // Update UI
+  const playPauseBtn = document.getElementById('playPauseBtn');
+  if (playPauseBtn) {
+    const icon = playPauseBtn.querySelector('i');
+    if (icon) icon.className = 'fas fa-play text-sm';
+  }
+
+  const progressEl = document.getElementById('audioProgress');
+  if (progressEl) progressEl.style.width = '0%';
+
+  const currentTimeEl = document.getElementById('currentTime');
+  if (currentTimeEl) currentTimeEl.textContent = '0:00';
+}
+
+function cyclePlaybackSpeed() {
+  const player = document.getElementById('player');
+  const speedBtn = document.getElementById('speedBtn');
+
+  if (!player || !speedBtn) return;
+
+  const speeds = [0.5, 0.75, 1, 1.25, 1.5, 2];
+  const currentSpeed = player.playbackRate;
+  const currentIndex = speeds.indexOf(currentSpeed);
+  const nextIndex = (currentIndex + 1) % speeds.length;
+  const newSpeed = speeds[nextIndex];
+
+  player.playbackRate = newSpeed;
+  speedBtn.textContent = `${newSpeed}x`;
+}
+
+function seekAudio(event) {
+  const player = document.getElementById('player');
+  const progressContainer = document.getElementById('progressContainer');
+
+  if (!player || !progressContainer || isNaN(player.duration)) return;
+
+  const rect = progressContainer.getBoundingClientRect();
+  const clickX = event.clientX - rect.left;
+  const containerWidth = rect.width;
+  const seekTime = (clickX / containerWidth) * player.duration;
+
+  player.currentTime = seekTime;
+}
+
+function formatTime(seconds) {
+  if (isNaN(seconds)) return '0:00';
+
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = Math.floor(seconds % 60);
+  return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
 }
 
 async function getDocumentRecommendations() {
