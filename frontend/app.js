@@ -2851,9 +2851,6 @@ function showTextInputModal() {
             <span class="text-xs text-slate-500 dark:text-slate-400">
               Suggested: 10+ characters for better analysis
             </span>
-            <button onclick="debugTextInput()" class="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
-              Debug Text Input
-            </button>
           </div>
         </div>
         
@@ -2876,22 +2873,6 @@ function showTextInputModal() {
       
       <!-- Footer -->
       <div class="flex items-center justify-between p-6 border-t border-slate-200 dark:border-slate-700">
-        <div class="flex space-x-2">
-          <button 
-            onclick="testTextProcessing()" 
-            class="px-3 py-2 text-xs bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
-            title="Test text processing functionality"
-          >
-            Test
-          </button>
-          <button 
-            onclick="debugTextInput()" 
-            class="px-3 py-2 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
-            title="Debug text input"
-          >
-            Debug
-          </button>
-        </div>
         <div class="flex space-x-3">
           <button 
             onclick="closeTextInputModal()" 
