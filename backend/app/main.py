@@ -183,8 +183,8 @@ async def upload(files: List[UploadFile] = File(...)):
                 # Also trigger a full index rebuild to ensure consistency
                 try:
                     all_docs = [doc.filename for doc in storage.list_pdfs(FILES_DIR)]
-                    rebuild_results = document_index.get_document_index().rebuild_index(
-                        all_docs
+                    rebuild_results = document_index.index_documents(
+                        FILES_DIR, all_docs
                     )
                     print(f"Full index rebuild completed: {rebuild_results}")
                 except Exception as rebuild_error:

@@ -548,11 +548,182 @@ function initAdobeView(url) {
 // Handle file uploads
 async function uploadFiles() {
   const input = document.getElementById('fileInput');
-  if (!input.files.length) return;
+  if (!input.files.length) {
+    toast('Please select files to upload', 'warning');
+    return;
+  }
+
+  // Validate file types
+  const files = Array.from(input.files);
+  const invalidFiles = files.filter(file => !file.type.includes('pdf'));
+
+  if (invalidFiles.length > 0) {
+    toast(`Invalid file type(s): ${invalidFiles.map(f => f.name).join(', ')}. Only PDF files are supported.`, 'error');
+    return;
+  }
+
+  // Show upload progress UI
+  showUploadProgress();
+
   const form = new FormData();
-  for (const f of input.files) form.append('files', f);
-  await fetch('/api/upload', { method: 'POST', body: form });
-  await loadDocuments();
+  for (const f of files) form.append('files', f);
+
+  try {
+    // Create XMLHttpRequest for progress tracking
+    const xhr = new XMLHttpRequest();
+
+    // Track upload progress
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable) {
+        const percentComplete = (event.loaded / event.total) * 100;
+        updateUploadProgress(percentComplete, `Uploading ${files.length} file(s)...`);
+      }
+    });
+
+    // Handle upload completion
+    xhr.addEventListener('load', async () => {
+      if (xhr.status === 200) {
+        updateUploadProgress(100, 'Upload completed!', 'success');
+        toast(`Successfully uploaded ${files.length} file(s)! 🎉`, 'success');
+
+        // Reload documents list
+        await loadDocuments();
+
+        // Hide progress after a short delay
+        setTimeout(() => {
+          hideUploadProgress();
+        }, 1500);
+      } else {
+        updateUploadProgress(0, 'Upload failed', 'error');
+        toast(`Upload failed: ${xhr.statusText || 'Unknown error'}`, 'error');
+        hideUploadProgress();
+      }
+    });
+
+    // Handle upload errors
+    xhr.addEventListener('error', () => {
+      updateUploadProgress(0, 'Upload failed', 'error');
+      toast('Upload failed: Network error', 'error');
+      hideUploadProgress();
+    });
+
+    // Handle upload timeout
+    xhr.addEventListener('timeout', () => {
+      updateUploadProgress(0, 'Upload timed out', 'error');
+      toast('Upload failed: Request timed out', 'error');
+      hideUploadProgress();
+    });
+
+    // Start the upload
+    xhr.open('POST', '/api/upload');
+    xhr.timeout = 300000; // 5 minutes timeout for large files
+    xhr.send(form);
+
+  } catch (error) {
+    console.error('Upload error:', error);
+    updateUploadProgress(0, 'Upload failed', 'error');
+    toast(`Upload failed: ${error.message}`, 'error');
+    hideUploadProgress();
+  }
+}
+
+// Show upload progress UI
+function showUploadProgress() {
+  // Create or show upload progress modal
+  let progressModal = document.getElementById('uploadProgressModal');
+  if (!progressModal) {
+    progressModal = document.createElement('div');
+    progressModal.id = 'uploadProgressModal';
+    progressModal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+    progressModal.innerHTML = `
+      <div class="bg-white dark:bg-slate-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+        <div class="text-center">
+          <div class="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-cloud-upload-alt text-white text-lg"></i>
+          </div>
+          <h3 class="text-xl font-semibold text-slate-800 dark:text-white mb-4">Uploading Files...</h3>
+          
+          <!-- Progress Bar -->
+          <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-3 mb-4">
+            <div id="uploadProgressBar" class="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-300" style="width: 0%"></div>
+          </div>
+          
+          <div class="text-sm text-slate-600 dark:text-slate-400 mb-2">
+            <div id="uploadProgressText">Preparing upload...</div>
+          </div>
+          
+          <div class="text-xs text-slate-500 dark:text-slate-400">
+            <span id="uploadProgressPercent">0%</span> complete
+          </div>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(progressModal);
+  }
+
+  progressModal.classList.remove('hidden');
+}
+
+// Update upload progress
+function updateUploadProgress(percent, status, state = 'uploading') {
+  const progressBar = document.getElementById('uploadProgressBar');
+  const progressText = document.getElementById('uploadProgressText');
+  const progressPercent = document.getElementById('uploadProgressPercent');
+  const progressModal = document.getElementById('uploadProgressModal');
+
+  if (progressBar) {
+    progressBar.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+
+    // Update progress bar appearance based on state
+    progressBar.classList.remove('success', 'error');
+    if (state === 'success') {
+      progressBar.classList.add('success');
+    } else if (state === 'error') {
+      progressBar.classList.add('error');
+    }
+  }
+
+  if (progressText) {
+    progressText.textContent = status;
+  }
+
+  if (progressPercent) {
+    progressPercent.textContent = `${Math.round(percent)}%`;
+  }
+
+  // Update modal icon based on state
+  if (progressModal) {
+    const icon = progressModal.querySelector('.fas');
+    if (icon) {
+      if (state === 'success') {
+        icon.className = 'fas fa-check-circle text-white text-lg';
+      } else if (state === 'error') {
+        icon.className = 'fas fa-exclamation-circle text-white text-lg';
+      } else {
+        icon.className = 'fas fa-cloud-upload-alt text-white text-lg';
+      }
+    }
+
+    // Update modal title based on state
+    const title = progressModal.querySelector('h3');
+    if (title) {
+      if (state === 'success') {
+        title.textContent = 'Upload Complete!';
+      } else if (state === 'error') {
+        title.textContent = 'Upload Failed';
+      } else {
+        title.textContent = 'Uploading Files...';
+      }
+    }
+  }
+}
+
+// Hide upload progress
+function hideUploadProgress() {
+  const progressModal = document.getElementById('uploadProgressModal');
+  if (progressModal) {
+    progressModal.classList.add('hidden');
+  }
 }
 
 async function loadDocuments() {
@@ -583,6 +754,9 @@ async function loadDocuments() {
       <div class="flex items-center space-x-2">
         <button class="p-2 bg-slate-100 dark:bg-slate-700 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded-lg transition-all duration-300 opacity-0 group-hover:opacity-100 transform translate-x-2 group-hover:translate-x-0" title="View document">
           <i class="fas fa-eye text-slate-600 dark:text-slate-400 text-xs"></i>
+        </button>
+        <button class="p-2 bg-slate-100 dark:bg-slate-700 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-lg transition-all duration-300 opacity-0 group-hover:opacity-100 transform translate-x-2 group-hover:translate-x-0" title="Delete document" onclick="deleteDocument('${d.filename}')">
+          <i class="fas fa-trash text-red-600 dark:text-red-400 text-xs"></i>
         </button>
         <div class="w-3 h-3 rounded-full bg-slate-300 dark:bg-slate-600 group-hover:bg-blue-400 dark:group-hover:bg-blue-500 transition-all duration-300"></div>
       </div>
@@ -1801,7 +1975,10 @@ async function main() {
   await fetchConfig();
   await fetchHealth();
   await loadDocuments();
-  document.getElementById('uploadBtn').addEventListener('click', uploadFiles);
+
+  // Set up upload functionality
+  setupUploadFunctionality();
+
   document.getElementById('analyzeBtn').addEventListener('click', analyze);
   const ib = document.getElementById('insightsBtn');
   const pb = document.getElementById('podcastBtn');
@@ -1816,6 +1993,8 @@ async function main() {
 
   const selectAllBtn = document.getElementById('selectAllBtn');
   const clearSelectionBtn = document.getElementById('clearSelectionBtn');
+  const deleteAllBtn = document.getElementById('deleteAllBtn');
+
   if (selectAllBtn) selectAllBtn.addEventListener('click', () => {
     const list = document.getElementById('docList');
     for (const li of list.children) li.classList.add('selected');
@@ -1825,6 +2004,14 @@ async function main() {
     const list = document.getElementById('docList');
     for (const li of list.children) li.classList.remove('selected');
     updateSelectedCount();
+  });
+  if (deleteAllBtn) deleteAllBtn.addEventListener('click', () => {
+    const selectedDocs = getSelectedDocs();
+    if (selectedDocs.length === 0) {
+      toast('Please select documents to delete', 'warning');
+      return;
+    }
+    showDeleteAllConfirmation(selectedDocs);
   });
 
   const docFilter = document.getElementById('docFilter');
@@ -1836,6 +2023,83 @@ async function main() {
       li.style.display = name.includes(q) ? '' : 'none';
     }
   });
+}
+
+// Set up upload functionality with drag and drop
+function setupUploadFunctionality() {
+  const uploadBtn = document.getElementById('uploadBtn');
+  const fileInput = document.getElementById('fileInput');
+  const uploadArea = document.querySelector('.group\\/upload');
+
+  if (uploadBtn) {
+    uploadBtn.addEventListener('click', () => {
+      fileInput.click();
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', uploadFiles);
+  }
+
+  // Drag and drop functionality
+  if (uploadArea) {
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+      uploadArea.addEventListener(eventName, preventDefaults, false);
+      document.body.addEventListener(eventName, preventDefaults, false);
+    });
+
+    // Highlight drop area when item is dragged over it
+    ['dragenter', 'dragover'].forEach(eventName => {
+      uploadArea.addEventListener(eventName, highlight, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+      uploadArea.addEventListener(eventName, unhighlight, false);
+    });
+
+    // Handle dropped files
+    uploadArea.addEventListener('drop', handleDrop, false);
+  }
+}
+
+function preventDefaults(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function highlight(e) {
+  const uploadArea = document.querySelector('.group\\/upload');
+  if (uploadArea) {
+    uploadArea.classList.add('dragover');
+  }
+}
+
+function unhighlight(e) {
+  const uploadArea = document.querySelector('.group\\/upload');
+  if (uploadArea) {
+    uploadArea.classList.remove('dragover');
+  }
+}
+
+function handleDrop(e) {
+  const dt = e.dataTransfer;
+  const files = dt.files;
+
+  if (files.length > 0) {
+    // Show immediate feedback
+    toast(`Processing ${files.length} dropped file(s)...`, 'info');
+
+    const fileInput = document.getElementById('fileInput');
+    fileInput.files = files;
+
+    // Start upload after a brief delay to show the feedback
+    setTimeout(() => {
+      uploadFiles();
+    }, 100);
+  } else {
+    toast('No valid files found in the dropped items', 'warning');
+  }
 }
 
 window.addEventListener('DOMContentLoaded', main);
@@ -2271,44 +2535,13 @@ function showTextInputModal() {
           </label>
           <textarea 
             id="textInputArea" 
-            placeholder="Paste or type the text you selected from the PDF here... (minimum 10 characters)"
+            placeholder="Paste or type the text you selected from the PDF here... (10+ characters suggested for better analysis)"
             class="w-full h-32 p-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-200 resize-none"
           ></textarea>
-          <div class="flex items-center justify-between mt-2">
+          <div class="flex items-center justify-end mt-2">
             <span class="text-xs text-slate-500 dark:text-slate-400">
-              <span id="charCount">0</span>/1000 characters
+              Suggested: 10+ characters for better analysis
             </span>
-            <span class="text-xs text-slate-500 dark:text-slate-400">
-              Minimum: 10 characters
-            </span>
-          </div>
-          <div class="mt-2">
-          <!--
-            <button 
-              onclick="testCharCounter()" 
-              class="text-xs text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 underline"
-            >
-              Test Character Counter
-            </button>
-            <button 
-              onclick="refreshCharCounter()" 
-              class="text-xs text-green-600 hover:text-green-800 dark:text-green-400 dark:hover:text-green-300 underline ml-2"
-            >
-              Refresh Counter
-            </button>
-            <button 
-              onclick="checkAdobeViewerInterference()" 
-              class="text-xs text-orange-600 hover:text-orange-800 dark:text-orange-400 dark:hover:text-orange-300 underline ml-2"
-            >
-              Check Interference
-            </button>
-            <button 
-              onclick="forceFixCharacterCounter()" 
-              class="text-xs text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300 underline ml-2"
-            >
-              Force Fix
-            </button>
-            -->
           </div>
         </div>
         
@@ -2340,8 +2573,7 @@ function showTextInputModal() {
         <button 
           id="analyzeTextBtn"
           onclick="analyzeSelectedText()" 
-          class="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all duration-200 transform hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled
+          class="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all duration-200 transform hover:scale-105"
         >
           <i class="fas fa-search mr-2"></i>Analyze Text
         </button>
@@ -2384,10 +2616,9 @@ function initializeCharacterCounter(modal) {
     console.log(`Attempting to initialize character counter (attempt ${attempts})`);
 
     const textArea = document.getElementById('textInputArea');
-    const charCount = document.getElementById('charCount');
     const analyzeBtn = document.getElementById('analyzeTextBtn');
 
-    if (!textArea || !charCount || !analyzeBtn) {
+    if (!textArea || !analyzeBtn) {
       console.log('Elements not found, retrying...');
       if (attempts < maxAttempts) {
         setTimeout(tryInitialize, 300);
@@ -2399,84 +2630,48 @@ function initializeCharacterCounter(modal) {
 
     console.log('Elements found, initializing character counter...');
 
-    // Simple, direct character counter function
-    function updateCharCount() {
+    // Always ensure the analyze button is enabled
+    function ensureButtonEnabled() {
       try {
-        const length = textArea.value.length;
-        charCount.textContent = length;
-
-        // Enable/disable analyze button based on text length
-        if (length >= 10) {
-          analyzeBtn.disabled = false;
-          analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-        } else {
-          analyzeBtn.disabled = true;
-          analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
-        }
-
-        console.log(`Character count updated: ${length}`);
+        // Always enable analyze button regardless of text length
+        analyzeBtn.disabled = false;
+        analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        console.log('Analyze button enabled');
       } catch (error) {
-        console.error('Error in updateCharCount:', error);
+        console.error('Error in ensureButtonEnabled:', error);
       }
     }
 
     // Strategy 1: Simple input event listener (most reliable)
-    textArea.addEventListener('input', updateCharCount);
+    textArea.addEventListener('input', ensureButtonEnabled);
     console.log('Added input event listener');
 
     // Strategy 2: Paste event listener
-    textArea.addEventListener('paste', updateCharCount);
+    textArea.addEventListener('paste', ensureButtonEnabled);
     console.log('Added paste event listener');
 
     // Strategy 3: Keyup event listener for immediate feedback
-    textArea.addEventListener('keyup', updateCharCount);
+    textArea.addEventListener('keyup', ensureButtonEnabled);
     console.log('Added keyup event listener');
 
     // Strategy 4: Change event listener
-    textArea.addEventListener('change', updateCharCount);
+    textArea.addEventListener('change', ensureButtonEnabled);
     console.log('Added change event listener');
 
     // Strategy 5: Focus event to update on focus
-    textArea.addEventListener('focus', updateCharCount);
+    textArea.addEventListener('focus', ensureButtonEnabled);
     console.log('Added focus event listener');
 
-    // Strategy 6: Simple polling as backup (very frequent)
-    const pollInterval = setInterval(() => {
-      try {
-        if (textArea && charCount && textArea.parentNode) {
-          const currentLength = textArea.value.length;
-          const displayedLength = parseInt(charCount.textContent) || 0;
-
-          if (currentLength !== displayedLength) {
-            console.log(`Polling detected length change: ${displayedLength} -> ${currentLength}`);
-            updateCharCount();
-          }
-        } else {
-          clearInterval(pollInterval);
-        }
-      } catch (error) {
-        console.log('Polling error:', error);
-        clearInterval(pollInterval);
-      }
-    }, 50); // Very frequent polling for immediate response
-
-    // Initial character count
-    updateCharCount();
+    // Initial button state - always enabled
+    ensureButtonEnabled();
 
     // Focus on text area
     textArea.focus();
 
-    // Store interval for cleanup
-    modal.dataset.pollInterval = pollInterval;
-
     console.log('Character counter initialized successfully');
-    console.log('Text area length:', textArea.value.length);
-    console.log('Character count element:', charCount.textContent);
 
-    // Verify the counter is working
+    // Verify the button is enabled
     setTimeout(() => {
-      console.log('Verification - Text area value:', textArea.value);
-      console.log('Verification - Character count:', charCount.textContent);
       console.log('Verification - Button disabled:', analyzeBtn.disabled);
     }, 200);
 
@@ -2491,13 +2686,6 @@ function closeTextInputModal() {
   console.log('Attempting to close modal:', modal);
 
   if (modal) {
-    // Clear the poll interval
-    const pollInterval = modal.dataset.pollInterval;
-    if (pollInterval) {
-      clearInterval(parseInt(pollInterval));
-      console.log('Cleared poll interval');
-    }
-
     // Reset initialization flag
     modal.dataset.counterInitialized = 'false';
     console.log('Reset counter initialization flag');
@@ -2517,9 +2705,13 @@ function analyzeSelectedText() {
   const selectedText = textArea.value.trim();
   const pageNumber = parseInt(pageInput.value) || CURRENT_PAGE || 1;
 
-  if (selectedText.length < 10) {
-    toast('Please enter at least 10 characters.', 'warning');
+  if (selectedText.length === 0) {
+    toast('Please enter some text to analyze.', 'warning');
     return;
+  }
+
+  if (selectedText.length < 10) {
+    toast('Short text detected. For better analysis, consider entering 10+ characters.', 'info');
   }
 
   // Close modal
@@ -3129,3 +3321,300 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeAudioPlayer();
 });
 
+// Delete document functionality
+async function deleteDocument(filename) {
+  // Show confirmation modal
+  showDeleteConfirmation(filename);
+}
+
+function showDeleteConfirmation(filename) {
+  // Create confirmation modal
+  const modal = document.createElement('div');
+  modal.id = 'deleteConfirmationModal';
+  modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 transform transition-all">
+      <!-- Header -->
+      <div class="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-500 rounded-xl flex items-center justify-center">
+            <i class="fas fa-exclamation-triangle text-white text-lg"></i>
+          </div>
+          <div>
+            <h3 class="text-xl font-bold text-slate-800 dark:text-white">Delete Document</h3>
+            <p class="text-sm text-slate-600 dark:text-slate-400">This action cannot be undone</p>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Content -->
+      <div class="p-6">
+        <div class="mb-4">
+          <p class="text-slate-700 dark:text-slate-300 mb-2">
+            Are you sure you want to delete this document?
+          </p>
+          <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border-l-4 border-red-500">
+            <div class="flex items-center space-x-2">
+              <i class="fas fa-file-pdf text-red-500"></i>
+              <span class="text-sm font-medium text-red-800 dark:text-red-200">${filename}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="text-sm text-slate-600 dark:text-slate-400">
+          <p>This will permanently remove the file from the system and cannot be recovered.</p>
+        </div>
+      </div>
+      
+      <!-- Footer -->
+      <div class="flex items-center justify-end space-x-3 p-6 border-t border-slate-200 dark:border-slate-700">
+        <button 
+          onclick="closeDeleteConfirmation()" 
+          class="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+        >
+          Cancel
+        </button>
+        <button 
+          onclick="confirmDeleteDocument('${filename}')" 
+          class="px-6 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white rounded-lg font-medium transition-all duration-200 transform hover:scale-105"
+        >
+          <i class="fas fa-trash mr-2"></i>Delete
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // Close modal on escape key
+  const handleEscape = (e) => {
+    if (e.key === 'Escape') {
+      closeDeleteConfirmation();
+      document.removeEventListener('keydown', handleEscape);
+    }
+  };
+  document.addEventListener('keydown', handleEscape);
+}
+
+function closeDeleteConfirmation() {
+  const modal = document.getElementById('deleteConfirmationModal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+async function confirmDeleteDocument(filename) {
+  try {
+    // Show loading state
+    const deleteBtn = document.querySelector('#deleteConfirmationModal button:last-child');
+    const originalContent = deleteBtn.innerHTML;
+    deleteBtn.disabled = true;
+    deleteBtn.innerHTML = `
+      <div class="flex items-center space-x-2">
+        <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+        <span>Deleting...</span>
+      </div>
+    `;
+
+    // Call delete API
+    const response = await fetch(`/api/documents/${encodeURIComponent(filename)}`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const result = await response.json();
+
+    if (result.success) {
+      // Close confirmation modal
+      closeDeleteConfirmation();
+
+      // Show success message
+      toast(`Successfully deleted "${filename}"`, 'success');
+
+      // Reload documents list
+      await loadDocuments();
+
+      // If the deleted document was currently loaded, clear the viewer
+      if (currentDoc === `/files/${filename}`) {
+        currentDoc = null;
+        const container = document.getElementById('adobe-dc-view');
+        if (container) {
+          container.innerHTML = '';
+        }
+        updateCurrentDocName();
+      }
+    } else {
+      throw new Error(result.error || 'Delete failed');
+    }
+
+  } catch (error) {
+    console.error('Delete error:', error);
+    toast(`Failed to delete "${filename}": ${error.message}`, 'error');
+
+    // Restore button state
+    const deleteBtn = document.querySelector('#deleteConfirmationModal button:last-child');
+    if (deleteBtn) {
+      deleteBtn.disabled = false;
+      deleteBtn.innerHTML = `
+        <i class="fas fa-trash mr-2"></i>Delete
+      `;
+    }
+  }
+}
+
+// Bulk delete functionality
+function showDeleteAllConfirmation(selectedDocs) {
+  // Create confirmation modal
+  const modal = document.createElement('div');
+  modal.id = 'deleteAllConfirmationModal';
+  modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
+
+  modal.innerHTML = `
+    <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 transform transition-all">
+      <!-- Header -->
+      <div class="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-500 rounded-xl flex items-center justify-center">
+            <i class="fas fa-exclamation-triangle text-white text-lg"></i>
+          </div>
+          <div>
+            <h3 class="text-xl font-bold text-slate-800 dark:text-white">Delete Multiple Documents</h3>
+            <p class="text-sm text-slate-600 dark:text-slate-400">This action cannot be undone</p>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Content -->
+      <div class="p-6">
+        <div class="mb-4">
+          <p class="text-slate-700 dark:text-slate-300 mb-2">
+            Are you sure you want to delete ${selectedDocs.length} selected document${selectedDocs.length > 1 ? 's' : ''}?
+          </p>
+          <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border-l-4 border-red-500 max-h-32 overflow-y-auto">
+            ${selectedDocs.map(filename => `
+              <div class="flex items-center space-x-2 mb-1">
+                <i class="fas fa-file-pdf text-red-500 text-xs"></i>
+                <span class="text-sm text-red-800 dark:text-red-200">${filename}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+        
+        <div class="text-sm text-slate-600 dark:text-slate-400">
+          <p>This will permanently remove all selected files from the system and cannot be recovered.</p>
+        </div>
+      </div>
+      
+      <!-- Footer -->
+      <div class="flex items-center justify-end space-x-3 p-6 border-t border-slate-200 dark:border-slate-700">
+        <button 
+          onclick="closeDeleteAllConfirmation()" 
+          class="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+        >
+          Cancel
+        </button>
+        <button 
+          onclick="confirmDeleteAllDocuments(${JSON.stringify(selectedDocs).replace(/"/g, '&quot;')})" 
+          class="px-6 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white rounded-lg font-medium transition-all duration-200 transform hover:scale-105"
+        >
+          <i class="fas fa-trash mr-2"></i>Delete 
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  // Close modal on escape key
+  const handleEscape = (e) => {
+    if (e.key === 'Escape') {
+      closeDeleteAllConfirmation();
+      document.removeEventListener('keydown', handleEscape);
+    }
+  };
+  document.addEventListener('keydown', handleEscape);
+}
+
+function closeDeleteAllConfirmation() {
+  const modal = document.getElementById('deleteAllConfirmationModal');
+  if (modal) {
+    modal.remove();
+  }
+}
+
+async function confirmDeleteAllDocuments(selectedDocs) {
+  try {
+    // Show loading state
+    const deleteBtn = document.querySelector('#deleteAllConfirmationModal button:last-child');
+    const originalContent = deleteBtn.innerHTML;
+    deleteBtn.disabled = true;
+    deleteBtn.innerHTML = `
+      <div class="flex items-center space-x-2">
+        <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+        <span>Deleting...</span>
+      </div>
+    `;
+
+    // Delete selected documents
+    const deletePromises = selectedDocs.map(filename =>
+      fetch(`/api/documents/${encodeURIComponent(filename)}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      })
+    );
+
+    const results = await Promise.allSettled(deletePromises);
+
+    // Count successful and failed deletions
+    const successful = results.filter(result => result.status === 'fulfilled' && result.value.ok).length;
+    const failed = results.length - successful;
+
+    // Close confirmation modal
+    closeDeleteAllConfirmation();
+
+    // Show results
+    if (successful > 0) {
+      toast(`Successfully deleted ${successful} document${successful > 1 ? 's' : ''}`, 'success');
+    }
+
+    if (failed > 0) {
+      toast(`Failed to delete ${failed} document${failed > 1 ? 's' : ''}`, 'error');
+    }
+
+    // Reload documents list
+    await loadDocuments();
+
+    // Clear current document if it was deleted
+    const deletedFilenames = selectedDocs.map(filename => `/files/${filename}`);
+    if (deletedFilenames.includes(currentDoc)) {
+      currentDoc = null;
+      const container = document.getElementById('adobe-dc-view');
+      if (container) {
+        container.innerHTML = '';
+      }
+      updateCurrentDocName();
+    }
+
+  } catch (error) {
+    console.error('Bulk delete error:', error);
+    toast(`Failed to delete documents: ${error.message}`, 'error');
+
+    // Restore button state
+    const deleteBtn = document.querySelector('#deleteAllConfirmationModal button:last-child');
+    if (deleteBtn) {
+      deleteBtn.disabled = false;
+      deleteBtn.innerHTML = `
+        <i class="fas fa-trash mr-2"></i>Delete 
+      `;
+    }
+  }
+}

@@ -1,14 +1,38 @@
 {
-  "South of France - Cities.pdf": {
-    "file_hash": "de4070bd7ecd6a45e9b00c89ba64d284",
-    "chunk_count": 33,
-    "indexed_at": 1755178911.8652368,
-    "file_size": 109176
-  },
   "South of France - Cuisine.pdf": {
     "file_hash": "02365279c68c5a62f021374bb459e70c",
     "chunk_count": 21,
     "indexed_at": 1755178913.290372,
     "file_size": 89634
+  },
+  "South of France - History.pdf": {
+    "file_hash": "823b218852a99d9aeef3bdfcd50b4139",
+    "chunk_count": 23,
+    "indexed_at": 1755263974.8357568,
+    "file_size": 102811
+  },
+  "South of France - Things to Do.pdf": {
+    "file_hash": "d132b82e0cd43577acad97b6891c2390",
+    "chunk_count": 22,
+    "indexed_at": 1755263976.0558515,
+    "file_size": 102459
+  },
+  "South of France - Tips and Tricks.pdf": {
+    "file_hash": "3cf672ff7c500b83ce41b3134b0080dd",
+    "chunk_count": 15,
+    "indexed_at": 1755263976.8378444,
+    "file_size": 89904
+  },
+  "South of France - Restaurants and Hotels.pdf": {
+    "file_hash": "7d6c8454cc04870cc074650cf3bd5d62",
+    "chunk_count": 32,
+    "indexed_at": 1755264232.3326957,
+    "file_size": 103635
+  },
+  "South of France - Traditions and Culture.pdf": {
+    "file_hash": "5bbf87e3eb35ff3b8ffdd3f641b933ff",
+    "chunk_count": 13,
+    "indexed_at": 1755264240.7205412,
+    "file_size": 57658
   }
 }

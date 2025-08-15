@@ -477,6 +477,12 @@ main {
   color: #60a5fa;
 }
 
+/* Delete button hover effects */
+.doc-item button:hover .fa-trash {
+  transform: scale(1.1);
+  transition: transform 0.2s ease;
+}
+
 /* Section and Snippet Styles */
 .section-item, .snippet-item {
   padding: var(--spacing-lg);
@@ -639,6 +645,29 @@ main {
   background: rgba(239, 246, 255, 0.5);
   transform: scale(1.05);
   box-shadow: var(--shadow-xl);
+}
+
+/* Drag and drop styles for the upload area */
+.group\/upload.dragover {
+  border-color: var(--primary);
+  background: rgba(239, 246, 255, 0.5);
+  transform: scale(1.05);
+  box-shadow: var(--shadow-xl);
+}
+
+.group\/upload.dragover .border-dashed {
+  border-color: var(--primary);
+  background: rgba(239, 246, 255, 0.5);
+}
+
+/* Dark theme support for drag and drop */
+[data-theme="dark"] .group\/upload.dragover {
+  background: rgba(30, 58, 138, 0.3);
+}
+
+[data-theme="dark"] .group\/upload.dragover .border-dashed {
+  border-color: var(--primary);
+  background: rgba(30, 58, 138, 0.3);
 }
 
 .upload-icon {
@@ -1210,4 +1239,73 @@ main {
 #adobe-dc-view .adobe-dc-view-content {
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch;
+}
+
+/* Upload Progress Modal */
+#uploadProgressModal {
+  animation: fadeIn 0.3s ease-out;
+}
+
+#uploadProgressModal .bg-white,
+#uploadProgressModal .dark\:bg-slate-800 {
+  animation: scaleIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+#uploadProgressBar {
+  transition: width 0.3s ease-out;
+  background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+  background-size: 200% 100%;
+  animation: gradientShift 2s ease-in-out infinite;
+}
+
+@keyframes gradientShift {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+/* Upload progress text animations */
+#uploadProgressText {
+  transition: all 0.3s ease-out;
+}
+
+#uploadProgressPercent {
+  font-weight: 600;
+  color: var(--primary);
+  transition: all 0.3s ease-out;
+}
+
+/* Success state for progress bar */
+#uploadProgressBar.success {
+  background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
+  animation: none;
+}
+
+/* Error state for progress bar */
+#uploadProgressBar.error {
+  background: linear-gradient(90deg, #ef4444 0%, #f87171 100%);
+  animation: none;
+}
+
+/* Delete confirmation modal animations */
+#deleteConfirmationModal {
+  animation: fadeIn 0.3s ease-out;
+}
+
+#deleteConfirmationModal .bg-white,
+#deleteConfirmationModal .dark\:bg-slate-800 {
+  animation: scaleIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+/* Delete button loading state */
+#deleteConfirmationModal button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+#deleteConfirmationModal button:disabled:hover {
+  transform: none;
 }
