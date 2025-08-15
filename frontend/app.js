@@ -2243,13 +2243,34 @@ function setupTextSelectionEvents() {
 function handleTextSelection(text, pageNumber) {
   console.log("Handling text selection:", text.substring(0, 100) + "...", "Page:", pageNumber);
 
-  if (!text || text.trim().length < 10) {
-    console.log("Text too short, ignoring selection");
+  // More lenient validation - only check if text exists and is not empty
+  if (!text || text.trim().length === 0) {
+    console.log("No text provided, ignoring selection");
+    toast('No text provided for analysis.', 'warning');
     return;
   }
 
   // Store the selected text globally
   selectedText = text.trim();
+
+  // Get current document name - handle case when no document is selected
+  let documentName = 'unknown';
+  if (currentDoc) {
+    // Extract filename from path
+    documentName = currentDoc.split('/').pop() || 'unknown';
+  } else {
+    // Try to get document name from UI
+    const currentDocNameEl = document.getElementById('currentDocName');
+    if (currentDocNameEl && currentDocNameEl.textContent !== 'No document selected') {
+      documentName = currentDocNameEl.textContent;
+    }
+  }
+
+  console.log('Document info:', {
+    currentDoc: currentDoc,
+    documentName: documentName,
+    pageNumber: pageNumber
+  });
 
   // Show loading state
   showTextSelectionLoading();
@@ -2262,13 +2283,24 @@ function handleTextSelection(text, pageNumber) {
     },
     body: JSON.stringify({
       selected_text: selectedText,
-      document: currentDoc || 'unknown',
+      document: documentName,
       page_number: pageNumber || CURRENT_PAGE,
       persona: '', // Will be filled from UI if available
       job: '',     // Will be filled from UI if available
     }),
   })
-    .then(response => response.json())
+    .then(response => {
+      console.log('API Response status:', response.status);
+      console.log('API Response headers:', response.headers);
+
+      if (!response.ok) {
+        return response.text().then(text => {
+          throw new Error(`API Error ${response.status}: ${text}`);
+        });
+      }
+
+      return response.json();
+    })
     .then(data => {
       console.log("Text selection response:", data);
       textSelectionInsights = data;
@@ -2276,6 +2308,13 @@ function handleTextSelection(text, pageNumber) {
     })
     .catch(error => {
       console.error('Error processing text selection:', error);
+      console.error('Error details:', {
+        message: error.message,
+        stack: error.stack,
+        selectedText: selectedText,
+        document: documentName,
+        pageNumber: pageNumber
+      });
       showNotification(`Error processing text selection: ${error.message}`, 'error');
     });
 }
@@ -2368,7 +2407,8 @@ async function getTextSelectionRecommendations() {
   if (!textSelectionInsights || !textSelectionInsights.selected_text) return;
 
   const selectedText = textSelectionInsights.selected_text;
-  if (!selectedText || selectedText.trim().length < 10) return;
+  // Remove the 10-character minimum requirement - allow any non-empty text
+  if (!selectedText || selectedText.trim().length === 0) return;
 
   try {
     const response = await fetch('/api/document-search', {
@@ -2500,6 +2540,9 @@ async function getDocumentRecommendations() {
 }
 
 function showTextInputModal() {
+  // Close any existing modal first
+  closeTextInputModal();
+
   // Create a modern modal overlay
   const modal = document.createElement('div');
   modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
@@ -2537,11 +2580,16 @@ function showTextInputModal() {
             id="textInputArea" 
             placeholder="Paste or type the text you selected from the PDF here... (10+ characters suggested for better analysis)"
             class="w-full h-32 p-3 border border-slate-300 dark:border-slate-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-slate-700 dark:text-slate-200 resize-none"
+            autocomplete="off"
+            spellcheck="false"
           ></textarea>
-          <div class="flex items-center justify-end mt-2">
+          <div class="flex items-center justify-between mt-2">
             <span class="text-xs text-slate-500 dark:text-slate-400">
               Suggested: 10+ characters for better analysis
             </span>
+            <button onclick="debugTextInput()" class="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300">
+              Debug Text Input
+            </button>
           </div>
         </div>
         
@@ -2563,20 +2611,38 @@ function showTextInputModal() {
       </div>
       
       <!-- Footer -->
-      <div class="flex items-center justify-end space-x-3 p-6 border-t border-slate-200 dark:border-slate-700">
-        <button 
-          onclick="closeTextInputModal()" 
-          class="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
-        >
-          Cancel
-        </button>
-        <button 
-          id="analyzeTextBtn"
-          onclick="analyzeSelectedText()" 
-          class="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all duration-200 transform hover:scale-105"
-        >
-          <i class="fas fa-search mr-2"></i>Analyze Text
-        </button>
+      <div class="flex items-center justify-between p-6 border-t border-slate-200 dark:border-slate-700">
+        <div class="flex space-x-2">
+          <button 
+            onclick="testTextProcessing()" 
+            class="px-3 py-2 text-xs bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-medium transition-colors"
+            title="Test text processing functionality"
+          >
+            Test
+          </button>
+          <button 
+            onclick="debugTextInput()" 
+            class="px-3 py-2 text-xs bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
+            title="Debug text input"
+          >
+            Debug
+          </button>
+        </div>
+        <div class="flex space-x-3">
+          <button 
+            onclick="closeTextInputModal()" 
+            class="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button 
+            id="analyzeTextBtn"
+            onclick="analyzeSelectedText()" 
+            class="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all duration-200 transform hover:scale-105"
+          >
+            <i class="fas fa-search mr-2"></i>Analyze Text
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -2595,6 +2661,33 @@ function showTextInputModal() {
     }
   };
   document.addEventListener('keydown', handleEscape);
+
+  // Debug: Log modal creation
+  console.log('Text input modal created and added to DOM');
+}
+
+async function updateCurrentPageFromViewer() {
+  if (!adobeViewer) {
+    console.log('No Adobe viewer available for page detection');
+    return;
+  }
+
+  try {
+    const apis = await adobeViewer.getAPIs();
+    if (apis && apis.getCurrentPage) {
+      const currentPage = await apis.getCurrentPage();
+      if (currentPage && typeof currentPage === 'number') {
+        const oldPage = CURRENT_PAGE;
+        CURRENT_PAGE = Math.max(1, currentPage);
+        console.log(`Updated current page from viewer: ${oldPage} -> ${CURRENT_PAGE}`);
+      }
+    } else if (apis && apis.getPageZoom) {
+      // Alternative: try to get page info from zoom APIs
+      console.log('getCurrentPage not available, trying alternative methods');
+    }
+  } catch (error) {
+    console.log('Could not get current page from viewer:', error);
+  }
 }
 
 // Separate function to initialize character counter with better error handling
@@ -2702,14 +2795,39 @@ function analyzeSelectedText() {
   const textArea = document.getElementById('textInputArea');
   const pageInput = document.getElementById('pageInput');
 
-  const selectedText = textArea.value.trim();
+  // Improved text retrieval with better error handling
+  if (!textArea) {
+    console.error('Text area element not found');
+    toast('Error: Text input area not found. Please try again.', 'error');
+    return;
+  }
+
+  // Get the text value and ensure it's properly retrieved
+  let selectedText = textArea.value;
+  if (typeof selectedText !== 'string') {
+    selectedText = String(selectedText || '');
+  }
+  selectedText = selectedText.trim();
+
   const pageNumber = parseInt(pageInput.value) || CURRENT_PAGE || 1;
 
-  if (selectedText.length === 0) {
+  // Debug logging to help identify the issue
+  console.log('Text analysis debug:', {
+    textAreaExists: !!textArea,
+    textAreaValue: textArea.value,
+    textAreaValueType: typeof textArea.value,
+    selectedText: selectedText,
+    selectedTextLength: selectedText.length,
+    pageNumber: pageNumber
+  });
+
+  // More lenient validation - only check if text is completely empty
+  if (!selectedText || selectedText.length === 0) {
     toast('Please enter some text to analyze.', 'warning');
     return;
   }
 
+  // Inform user about short text but don't block it
   if (selectedText.length < 10) {
     toast('Short text detected. For better analysis, consider entering 10+ characters.', 'info');
   }
@@ -2721,900 +2839,64 @@ function analyzeSelectedText() {
   handleTextSelection(selectedText, pageNumber);
 }
 
-async function updateCurrentPageFromViewer() {
-  if (!adobeViewer) {
-    console.log('No Adobe viewer available for page detection');
-    return;
+// Debug function to test text input functionality
+function debugTextInput() {
+  const textArea = document.getElementById('textInputArea');
+  const analyzeBtn = document.getElementById('analyzeTextBtn');
+
+  console.log('=== TEXT INPUT DEBUG ===');
+  console.log('Text area exists:', !!textArea);
+  if (textArea) {
+    console.log('Text area value:', textArea.value);
+    console.log('Text area value type:', typeof textArea.value);
+    console.log('Text area value length:', textArea.value.length);
+    console.log('Text area trimmed length:', textArea.value.trim().length);
+  }
+  console.log('Analyze button exists:', !!analyzeBtn);
+  if (analyzeBtn) {
+    console.log('Analyze button disabled:', analyzeBtn.disabled);
   }
 
-  try {
-    const apis = await adobeViewer.getAPIs();
-    if (apis && apis.getCurrentPage) {
-      const currentPage = await apis.getCurrentPage();
-      if (currentPage && typeof currentPage === 'number') {
-        const oldPage = CURRENT_PAGE;
-        CURRENT_PAGE = Math.max(1, currentPage);
-        console.log(`Updated current page from viewer: ${oldPage} -> ${CURRENT_PAGE}`);
-      }
-    } else if (apis && apis.getPageZoom) {
-      // Alternative: try to get page info from zoom APIs
-      console.log('getCurrentPage not available, trying alternative methods');
-    }
-  } catch (error) {
-    console.log('Could not get current page from viewer:', error);
+  // Test setting some text
+  if (textArea) {
+    const testText = 'Test text for debugging';
+    textArea.value = testText;
+    console.log('Set test text:', testText);
+    console.log('Text area value after setting:', textArea.value);
+    console.log('Text area length after setting:', textArea.value.length);
   }
 }
 
-// Test function to verify character counter is working
-function testCharCounter() {
+// Test function to verify text processing - can be called from browser console
+function testTextProcessing() {
+  console.log('=== TESTING TEXT PROCESSING ===');
+
+  // Test 1: Check if modal elements exist
   const textArea = document.getElementById('textInputArea');
-  const charCount = document.getElementById('charCount');
   const analyzeBtn = document.getElementById('analyzeTextBtn');
 
-  if (!textArea || !charCount || !analyzeBtn) {
-    alert('Elements not found!');
+  console.log('Modal elements check:');
+  console.log('- Text area exists:', !!textArea);
+  console.log('- Analyze button exists:', !!analyzeBtn);
+
+  if (!textArea || !analyzeBtn) {
+    console.log('Modal not open. Opening modal...');
+    showTextInputModal();
+    setTimeout(testTextProcessing, 500);
     return;
   }
 
-  console.log('=== CHARACTER COUNTER TEST ===');
-  console.log('Text area element:', textArea);
-  console.log('Character count element:', charCount);
-  console.log('Analyze button:', analyzeBtn);
-  console.log('Text area value before test:', textArea.value);
-  console.log('Character count before test:', charCount.textContent);
-  console.log('Button disabled before test:', analyzeBtn.disabled);
-
-  // Test with some sample text
-  const testText = 'This is a test message with 35 characters!';
-
-  console.log('Setting text area value to:', testText);
+  // Test 2: Set test text and verify
+  const testText = 'This is a test text for analysis. It should work properly.';
   textArea.value = testText;
 
+  console.log('Test text set:', testText);
   console.log('Text area value after setting:', textArea.value);
-  console.log('Text area length after setting:', textArea.value.length);
+  console.log('Text area length:', textArea.value.length);
 
-  // Force update the counter immediately
-  charCount.textContent = textArea.value.length;
-  console.log('Manually updated counter to:', charCount.textContent);
+  // Test 3: Simulate analyze button click
+  console.log('Simulating analyze button click...');
+  analyzeSelectedText();
 
-  // Update button state
-  if (textArea.value.length >= 10) {
-    analyzeBtn.disabled = false;
-    analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-    console.log('Button enabled');
-  } else {
-    analyzeBtn.disabled = true;
-    analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
-    console.log('Button disabled');
-  }
-
-  // Test if events are working by dispatching an input event
-  console.log('Testing input event...');
-  const inputEvent = new Event('input', { bubbles: true });
-  textArea.dispatchEvent(inputEvent);
-
-  // Wait a moment for events to process
-  setTimeout(() => {
-    console.log('=== AFTER EVENT TEST ===');
-    console.log('Text area value:', textArea.value);
-    console.log('Text area length:', textArea.value.length);
-    console.log('Counter shows:', charCount.textContent);
-    console.log('Button disabled:', analyzeBtn.disabled);
-
-    // Show current state
-    alert(`Test Results:\n\nText area value: "${textArea.value}"\nLength: ${textArea.value.length}\nCounter shows: ${charCount.textContent}\nButton disabled: ${analyzeBtn.disabled}\n\nCheck console for detailed logs.`);
-  }, 100);
-}
-
-// Manual refresh function for character counter
-function refreshCharCounter() {
-  const textArea = document.getElementById('textInputArea');
-  const charCount = document.getElementById('charCount');
-  const analyzeBtn = document.getElementById('analyzeTextBtn');
-
-  if (!textArea || !charCount || !analyzeBtn) {
-    console.error('Elements not found for refresh');
-    return;
-  }
-
-  console.log('=== REFRESHING CHARACTER COUNTER ===');
-  console.log('Current text area value:', textArea.value);
-  console.log('Current text area length:', textArea.value.length);
-
-  // Force update the counter
-  const length = textArea.value.length;
-  charCount.textContent = length;
-  console.log('Updated counter to:', length);
-
-  // Update button state
-  if (length >= 10) {
-    analyzeBtn.disabled = false;
-    analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-    console.log('Button enabled');
-  } else {
-    analyzeBtn.disabled = true;
-    analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
-    console.log('Button disabled');
-  }
-
-  // Reinstall event listeners on the existing textarea
-  try {
-    // Remove existing listeners by cloning the textarea
-    const newTextArea = textArea.cloneNode(true);
-    newTextArea.value = textArea.value;
-
-    // Add our event listeners
-    newTextArea.addEventListener('input', () => {
-      const len = newTextArea.value.length;
-      charCount.textContent = len;
-      if (len >= 10) {
-        analyzeBtn.disabled = false;
-        analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-      } else {
-        analyzeBtn.disabled = true;
-        analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      }
-    });
-
-    newTextArea.addEventListener('paste', () => {
-      const len = newTextArea.value.length;
-      charCount.textContent = len;
-      if (len >= 10) {
-        analyzeBtn.disabled = false;
-        analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-      } else {
-        analyzeBtn.disabled = true;
-        analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      }
-    });
-
-    newTextArea.addEventListener('keyup', () => {
-      const len = newTextArea.value.length;
-      charCount.textContent = len;
-      if (len >= 10) {
-        analyzeBtn.disabled = false;
-        analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-      } else {
-        analyzeBtn.disabled = true;
-        analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      }
-    });
-
-    newTextArea.addEventListener('change', () => {
-      const len = newTextArea.value.length;
-      charCount.textContent = len;
-      if (len >= 10) {
-        analyzeBtn.disabled = false;
-        analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-      } else {
-        analyzeBtn.disabled = true;
-        analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      }
-    });
-
-    newTextArea.addEventListener('focus', () => {
-      const len = newTextArea.value.length;
-      charCount.textContent = len;
-      if (len >= 10) {
-        analyzeBtn.disabled = false;
-        analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-      } else {
-        analyzeBtn.disabled = true;
-        analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
-      }
-    });
-
-    // Replace the old textarea
-    textArea.parentNode.replaceChild(newTextArea, textArea);
-
-    // Focus on the new textarea
-    newTextArea.focus();
-
-    console.log('Reinitialized event listeners with new textarea');
-  } catch (error) {
-    console.log('Failed to reinitialize event listeners:', error);
-  }
-
-  console.log('Refresh complete');
-}
-
-// Global function to force refresh character counter (useful for debugging)
-function forceRefreshCharCounter() {
-  console.log('=== FORCE REFRESH CHARACTER COUNTER ===');
-
-  const textArea = document.getElementById('textInputArea');
-  const charCount = document.getElementById('charCount');
-  const analyzeBtn = document.getElementById('analyzeTextBtn');
-
-  if (!textArea || !charCount || !analyzeBtn) {
-    console.log('Modal not open, cannot refresh counter');
-    return false;
-  }
-
-  // Force update
-  const length = textArea.value.length;
-  charCount.textContent = length;
-
-  // Update button state
-  if (length >= 10) {
-    analyzeBtn.disabled = false;
-    analyzeBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-  } else {
-    analyzeBtn.disabled = true;
-    analyzeBtn.classList.add('opacity-50', 'cursor-not-allowed');
-  }
-
-  console.log(`Forced refresh: ${length} characters, button ${analyzeBtn.disabled ? 'disabled' : 'enabled'}`);
-  return true;
-}
-
-// Function to check for Adobe viewer interference
-function checkAdobeViewerInterference() {
-  console.log('=== CHECKING ADOBE VIEWER INTERFERENCE ===');
-
-  const interference = {
-    adobeViewerExists: !!window.adobeViewer,
-    adobeViewExists: !!window.adobeView,
-    currentDoc: !!currentDoc,
-    modalOpen: !!document.getElementById('textInputModal'),
-    textAreaExists: !!document.getElementById('textInputArea'),
-    charCountExists: !!document.getElementById('charCount')
-  };
-
-  console.log('Interference check results:', interference);
-
-  if (interference.adobeViewerExists) {
-    console.log('Adobe viewer is active, this might interfere with DOM events');
-
-    // Check if the viewer is in an iframe
-    try {
-      const viewerContainer = document.getElementById('adobe-dc-view');
-      if (viewerContainer) {
-        const iframes = viewerContainer.querySelectorAll('iframe');
-        console.log('Adobe viewer iframes found:', iframes.length);
-
-        iframes.forEach((iframe, index) => {
-          console.log(`Iframe ${index}:`, {
-            src: iframe.src,
-            contentWindow: !!iframe.contentWindow,
-            contentDocument: !!iframe.contentDocument
-          });
-        });
-      }
-    } catch (error) {
-      console.log('Could not inspect Adobe viewer iframes:', error);
-    }
-  }
-
-  if (interference.modalOpen && interference.textAreaExists) {
-    const textArea = document.getElementById('textInputArea');
-    const charCount = document.getElementById('charCount');
-
-    console.log('Text area value:', textArea.value);
-    console.log('Text area length:', textArea.value.length);
-    console.log('Character count shows:', charCount.textContent);
-
-    // Check if the textarea has our custom value setter
-    try {
-      const descriptor = Object.getOwnPropertyDescriptor(textArea, 'value');
-      console.log('Textarea value property descriptor:', descriptor);
-
-      if (descriptor && descriptor.set) {
-        console.log('Custom value setter is installed');
-      } else {
-        console.log('No custom value setter found');
-      }
-    } catch (error) {
-      console.log('Could not check value property descriptor:', error);
-    }
-
-    // Check if events are working
-    const testEvent = new Event('input', { bubbles: true });
-    textArea.dispatchEvent(testEvent);
-
-    setTimeout(() => {
-      console.log('After test event - Text area length:', textArea.value.length);
-      console.log('After test event - Character count shows:', charCount.textContent);
-
-      // Test if our custom setter is working
-      console.log('Testing custom setter...');
-      const originalValue = textArea.value;
-      textArea.value = 'Test interference check';
-
-      setTimeout(() => {
-        console.log('After custom setter test:');
-        console.log('Text area value:', textArea.value);
-        console.log('Character count shows:', charCount.textContent);
-
-        // Restore original value
-        textArea.value = originalValue;
-      }, 100);
-    }, 100);
-  }
-
-  return interference;
-}
-
-// Force fix function for character counter when Adobe viewer interference is detected
-function forceFixCharacterCounter() {
-  console.log('=== FORCE FIXING CHARACTER COUNTER ===');
-
-  const modal = document.getElementById('textInputModal');
-  if (!modal) {
-    console.log('Modal not open, cannot force fix');
-    return;
-  }
-
-  // Reset the initialization flag
-  modal.dataset.counterInitialized = 'false';
-
-  // Clear any existing intervals
-  const pollInterval = modal.dataset.pollInterval;
-  if (pollInterval) {
-    clearInterval(parseInt(pollInterval));
-    console.log('Cleared existing poll interval');
-  }
-
-  // Force reinitialize the character counter
-  console.log('Reinitializing character counter...');
-  initializeCharacterCounter(modal);
-
-  // Also force a manual refresh
-  setTimeout(() => {
-    refreshCharCounter();
-  }, 200);
-
-  console.log('Force fix complete');
-}
-
-// Add to global scope for debugging
-window.forceRefreshCharCounter = forceRefreshCharCounter;
-window.testCharCounter = testCharCounter;
-window.refreshCharCounter = refreshCharCounter;
-window.checkAdobeViewerInterference = checkAdobeViewerInterference;
-window.forceFixCharacterCounter = forceFixCharacterCounter;
-
-// Initialize audio player controls
-let audioPlayerInitialized = false;
-
-// Function to reset audio player initialization (useful when loading new audio)
-function resetAudioPlayerInitialization() {
-  audioPlayerInitialized = false;
-}
-
-function initializeAudioPlayer() {
-  // Prevent multiple initializations
-  if (audioPlayerInitialized) {
-    console.log('Audio player already initialized, skipping...');
-    return;
-  }
-
-  const player = document.getElementById('player');
-  const playPauseBtn = document.getElementById('playPauseBtn');
-  const stopBtn = document.getElementById('stopBtn');
-  const audioProgress = document.getElementById('audioProgress');
-  const progressContainer = document.getElementById('progressContainer');
-  const currentTime = document.getElementById('currentTime');
-  const totalTime = document.getElementById('totalTime');
-  const audioInfo = document.getElementById('audioInfo');
-  const audioTitle = document.getElementById('audioTitle');
-  const speedBtn = document.getElementById('speedBtn');
-  const speedMenu = document.getElementById('speedMenu');
-
-  if (!player || !playPauseBtn || !stopBtn) {
-    console.log('Audio player elements not found');
-    return;
-  }
-
-  // Mark as initialized to prevent duplicate calls
-  audioPlayerInitialized = true;
-
-  // Get the current player reference
-  const currentPlayer = player;
-
-  // Format time helper function
-  function formatTime(seconds) {
-    if (isNaN(seconds)) return '0:00';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  // Update progress bar and time display
-  function updateProgress() {
-    if (currentPlayer.duration && !isNaN(currentPlayer.duration)) {
-      const progress = (currentPlayer.currentTime / currentPlayer.duration) * 100;
-      if (audioProgress) audioProgress.style.width = progress + '%';
-      if (currentTime) currentTime.textContent = formatTime(currentPlayer.currentTime);
-      if (totalTime) totalTime.textContent = formatTime(currentPlayer.duration);
-    }
-  }
-
-  // Update play/pause button icon
-  function updatePlayPauseIcon() {
-    const icon = playPauseBtn.querySelector('i');
-    if (icon) {
-      if (currentPlayer.paused) {
-        icon.className = 'fas fa-play text-sm';
-      } else {
-        icon.className = 'fas fa-pause text-sm';
-      }
-    }
-  }
-
-  // Show audio info
-  function showAudioInfo() {
-    if (audioInfo && audioTitle) {
-      audioInfo.classList.remove('hidden');
-      audioTitle.textContent = currentPlayer.title || 'AI Podcast';
-    }
-  }
-
-  // Hide audio info
-  function hideAudioInfo() {
-    if (audioInfo) audioInfo.classList.add('hidden');
-    if (audioTitle) audioTitle.textContent = 'No audio loaded';
-  }
-
-  // Play/Pause button click handler
-  playPauseBtn.addEventListener('click', () => {
-    if (currentPlayer.paused) {
-      // Only show error toast if the play actually fails and it's not a user-initiated pause
-      currentPlayer.play().catch(e => {
-        console.log('Play failed:', e);
-        // Only show error if it's a genuine failure, not just a user pause
-        if (e.name !== 'AbortError' && !currentPlayer.paused) {
-          toast('Failed to play audio. Please try again.', 'error');
-        }
-      });
-    } else {
-      currentPlayer.pause();
-    }
-  });
-
-  // Stop button click handler
-  stopBtn.addEventListener('click', () => {
-    currentPlayer.pause();
-    currentPlayer.currentTime = 0;
-    updateProgress();
-    updatePlayPauseIcon();
-  });
-
-  // Progress bar seeking functionality
-  if (progressContainer) {
-    progressContainer.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Check if audio is ready for seeking
-      if (!currentPlayer.duration || isNaN(currentPlayer.duration) || currentPlayer.readyState < 1) {
-        console.log('Audio not ready for seeking yet');
-        toast('Audio is still loading. Please wait a moment before seeking.', 'info');
-        return;
-      }
-
-      const rect = progressContainer.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const width = rect.width;
-      const percentage = clickX / width;
-
-      // Ensure percentage is within valid range
-      const clampedPercentage = Math.max(0, Math.min(1, percentage));
-
-      // Store current playback state
-      const wasPlaying = !currentPlayer.paused;
-
-      // Seek to the new position
-      const newTime = clampedPercentage * currentPlayer.duration;
-
-      // Ensure the seek operation completes before resuming
-      currentPlayer.currentTime = newTime;
-
-      // Update progress immediately
-      updateProgress();
-
-      // Resume playback if it was playing before
-      if (wasPlaying) {
-        // Add a small delay to ensure the seek operation completes
-        setTimeout(() => {
-          currentPlayer.play().catch(e => {
-            console.log('Failed to resume playback after seek:', e);
-            // Don't show error toast for seek failures as they're usually temporary
-          });
-        }, 100);
-      }
-
-      console.log(`Seeked to ${clampedPercentage * 100}% (${currentPlayer.currentTime}s / ${currentPlayer.duration}s)`);
-    });
-  }
-
-  // Show progress handle on hover
-  progressContainer.addEventListener('mouseenter', () => {
-    const handle = document.getElementById('progressHandle');
-    if (handle) handle.style.opacity = '1';
-  });
-
-  progressContainer.addEventListener('mouseleave', () => {
-    const handle = document.getElementById('progressHandle');
-    if (handle) handle.style.opacity = '0';
-  });
-
-  // Playback speed controls - cycling through speeds
-  if (speedBtn) {
-    const speeds = [1, 1.25, 1.5, 1.75, 2.0];
-    let currentSpeedIndex = 0;
-
-    speedBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      // Cycle to next speed
-      currentSpeedIndex = (currentSpeedIndex + 1) % speeds.length;
-      const newSpeed = speeds[currentSpeedIndex];
-
-      // Apply the new speed
-      currentPlayer.playbackRate = newSpeed;
-      speedBtn.textContent = newSpeed + 'x';
-
-      console.log(`Playback speed set to ${newSpeed}x`);
-
-      // Show feedback
-      toast(`Speed: ${newSpeed}x`, 'info');
-    });
-  }
-
-  // Audio event listeners
-  currentPlayer.addEventListener('loadedmetadata', () => {
-    console.log('Audio metadata loaded');
-    updateProgress();
-    showAudioInfo();
-  });
-
-  currentPlayer.addEventListener('timeupdate', updateProgress);
-
-  currentPlayer.addEventListener('play', () => {
-    console.log('Audio started playing');
-    updatePlayPauseIcon();
-    showAudioInfo();
-  });
-
-  currentPlayer.addEventListener('pause', () => {
-    console.log('Audio paused');
-    updatePlayPauseIcon();
-  });
-
-  currentPlayer.addEventListener('ended', () => {
-    console.log('Audio ended');
-    updatePlayPauseIcon();
-    currentPlayer.currentTime = 0;
-    updateProgress();
-  });
-
-  currentPlayer.addEventListener('error', (e) => {
-    console.error('Audio error:', e);
-    // Only show error toast for genuine errors, not user-initiated actions
-    if (e.target.error && e.target.error.code !== 20) { // Code 20 is usually user abort
-      toast('Audio playback error. Please try again.', 'error');
-      hideAudioInfo();
-    }
-  });
-
-  currentPlayer.addEventListener('loadstart', () => {
-    console.log('Audio loading started');
-    if (audioTitle) audioTitle.textContent = 'Loading...';
-  });
-
-  currentPlayer.addEventListener('canplay', () => {
-    console.log('Audio can start playing');
-  });
-
-  // Initial state
-  updateProgress();
-  updatePlayPauseIcon();
-  hideAudioInfo();
-
-  console.log('Audio player initialized with seeking and speed controls');
-}
-
-// Initialize audio player when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
-  initializeAudioPlayer();
-});
-
-// Delete document functionality
-async function deleteDocument(filename) {
-  // Show confirmation modal
-  showDeleteConfirmation(filename);
-}
-
-function showDeleteConfirmation(filename) {
-  // Create confirmation modal
-  const modal = document.createElement('div');
-  modal.id = 'deleteConfirmationModal';
-  modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
-
-  modal.innerHTML = `
-    <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 transform transition-all">
-      <!-- Header -->
-      <div class="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-        <div class="flex items-center space-x-3">
-          <div class="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-500 rounded-xl flex items-center justify-center">
-            <i class="fas fa-exclamation-triangle text-white text-lg"></i>
-          </div>
-          <div>
-            <h3 class="text-xl font-bold text-slate-800 dark:text-white">Delete Document</h3>
-            <p class="text-sm text-slate-600 dark:text-slate-400">This action cannot be undone</p>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Content -->
-      <div class="p-6">
-        <div class="mb-4">
-          <p class="text-slate-700 dark:text-slate-300 mb-2">
-            Are you sure you want to delete this document?
-          </p>
-          <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border-l-4 border-red-500">
-            <div class="flex items-center space-x-2">
-              <i class="fas fa-file-pdf text-red-500"></i>
-              <span class="text-sm font-medium text-red-800 dark:text-red-200">${filename}</span>
-            </div>
-          </div>
-        </div>
-        
-        <div class="text-sm text-slate-600 dark:text-slate-400">
-          <p>This will permanently remove the file from the system and cannot be recovered.</p>
-        </div>
-      </div>
-      
-      <!-- Footer -->
-      <div class="flex items-center justify-end space-x-3 p-6 border-t border-slate-200 dark:border-slate-700">
-        <button 
-          onclick="closeDeleteConfirmation()" 
-          class="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
-        >
-          Cancel
-        </button>
-        <button 
-          onclick="confirmDeleteDocument('${filename}')" 
-          class="px-6 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white rounded-lg font-medium transition-all duration-200 transform hover:scale-105"
-        >
-          <i class="fas fa-trash mr-2"></i>Delete
-        </button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(modal);
-
-  // Close modal on escape key
-  const handleEscape = (e) => {
-    if (e.key === 'Escape') {
-      closeDeleteConfirmation();
-      document.removeEventListener('keydown', handleEscape);
-    }
-  };
-  document.addEventListener('keydown', handleEscape);
-}
-
-function closeDeleteConfirmation() {
-  const modal = document.getElementById('deleteConfirmationModal');
-  if (modal) {
-    modal.remove();
-  }
-}
-
-async function confirmDeleteDocument(filename) {
-  try {
-    // Show loading state
-    const deleteBtn = document.querySelector('#deleteConfirmationModal button:last-child');
-    const originalContent = deleteBtn.innerHTML;
-    deleteBtn.disabled = true;
-    deleteBtn.innerHTML = `
-      <div class="flex items-center space-x-2">
-        <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-        <span>Deleting...</span>
-      </div>
-    `;
-
-    // Call delete API
-    const response = await fetch(`/api/documents/${encodeURIComponent(filename)}`, {
-      method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
-    }
-
-    const result = await response.json();
-
-    if (result.success) {
-      // Close confirmation modal
-      closeDeleteConfirmation();
-
-      // Show success message
-      toast(`Successfully deleted "${filename}"`, 'success');
-
-      // Reload documents list
-      await loadDocuments();
-
-      // If the deleted document was currently loaded, clear the viewer
-      if (currentDoc === `/files/${filename}`) {
-        currentDoc = null;
-        const container = document.getElementById('adobe-dc-view');
-        if (container) {
-          container.innerHTML = '';
-        }
-        updateCurrentDocName();
-      }
-    } else {
-      throw new Error(result.error || 'Delete failed');
-    }
-
-  } catch (error) {
-    console.error('Delete error:', error);
-    toast(`Failed to delete "${filename}": ${error.message}`, 'error');
-
-    // Restore button state
-    const deleteBtn = document.querySelector('#deleteConfirmationModal button:last-child');
-    if (deleteBtn) {
-      deleteBtn.disabled = false;
-      deleteBtn.innerHTML = `
-        <i class="fas fa-trash mr-2"></i>Delete
-      `;
-    }
-  }
-}
-
-// Bulk delete functionality
-function showDeleteAllConfirmation(selectedDocs) {
-  // Create confirmation modal
-  const modal = document.createElement('div');
-  modal.id = 'deleteAllConfirmationModal';
-  modal.className = 'fixed inset-0 bg-black/50 flex items-center justify-center z-50';
-
-  modal.innerHTML = `
-    <div class="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl max-w-md w-full mx-4 transform transition-all">
-      <!-- Header -->
-      <div class="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-        <div class="flex items-center space-x-3">
-          <div class="w-10 h-10 bg-gradient-to-r from-red-500 to-pink-500 rounded-xl flex items-center justify-center">
-            <i class="fas fa-exclamation-triangle text-white text-lg"></i>
-          </div>
-          <div>
-            <h3 class="text-xl font-bold text-slate-800 dark:text-white">Delete Multiple Documents</h3>
-            <p class="text-sm text-slate-600 dark:text-slate-400">This action cannot be undone</p>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Content -->
-      <div class="p-6">
-        <div class="mb-4">
-          <p class="text-slate-700 dark:text-slate-300 mb-2">
-            Are you sure you want to delete ${selectedDocs.length} selected document${selectedDocs.length > 1 ? 's' : ''}?
-          </p>
-          <div class="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border-l-4 border-red-500 max-h-32 overflow-y-auto">
-            ${selectedDocs.map(filename => `
-              <div class="flex items-center space-x-2 mb-1">
-                <i class="fas fa-file-pdf text-red-500 text-xs"></i>
-                <span class="text-sm text-red-800 dark:text-red-200">${filename}</span>
-              </div>
-            `).join('')}
-          </div>
-        </div>
-        
-        <div class="text-sm text-slate-600 dark:text-slate-400">
-          <p>This will permanently remove all selected files from the system and cannot be recovered.</p>
-        </div>
-      </div>
-      
-      <!-- Footer -->
-      <div class="flex items-center justify-end space-x-3 p-6 border-t border-slate-200 dark:border-slate-700">
-        <button 
-          onclick="closeDeleteAllConfirmation()" 
-          class="px-4 py-2 text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 transition-colors"
-        >
-          Cancel
-        </button>
-        <button 
-          onclick="confirmDeleteAllDocuments(${JSON.stringify(selectedDocs).replace(/"/g, '&quot;')})" 
-          class="px-6 py-2 bg-gradient-to-r from-red-500 to-pink-500 hover:from-red-600 hover:to-pink-600 text-white rounded-lg font-medium transition-all duration-200 transform hover:scale-105"
-        >
-          <i class="fas fa-trash mr-2"></i>Delete 
-        </button>
-      </div>
-    </div>
-  `;
-
-  document.body.appendChild(modal);
-
-  // Close modal on escape key
-  const handleEscape = (e) => {
-    if (e.key === 'Escape') {
-      closeDeleteAllConfirmation();
-      document.removeEventListener('keydown', handleEscape);
-    }
-  };
-  document.addEventListener('keydown', handleEscape);
-}
-
-function closeDeleteAllConfirmation() {
-  const modal = document.getElementById('deleteAllConfirmationModal');
-  if (modal) {
-    modal.remove();
-  }
-}
-
-async function confirmDeleteAllDocuments(selectedDocs) {
-  try {
-    // Show loading state
-    const deleteBtn = document.querySelector('#deleteAllConfirmationModal button:last-child');
-    const originalContent = deleteBtn.innerHTML;
-    deleteBtn.disabled = true;
-    deleteBtn.innerHTML = `
-      <div class="flex items-center space-x-2">
-        <div class="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-        <span>Deleting...</span>
-      </div>
-    `;
-
-    // Delete selected documents
-    const deletePromises = selectedDocs.map(filename =>
-      fetch(`/api/documents/${encodeURIComponent(filename)}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      })
-    );
-
-    const results = await Promise.allSettled(deletePromises);
-
-    // Count successful and failed deletions
-    const successful = results.filter(result => result.status === 'fulfilled' && result.value.ok).length;
-    const failed = results.length - successful;
-
-    // Close confirmation modal
-    closeDeleteAllConfirmation();
-
-    // Show results
-    if (successful > 0) {
-      toast(`Successfully deleted ${successful} document${successful > 1 ? 's' : ''}`, 'success');
-    }
-
-    if (failed > 0) {
-      toast(`Failed to delete ${failed} document${failed > 1 ? 's' : ''}`, 'error');
-    }
-
-    // Reload documents list
-    await loadDocuments();
-
-    // Clear current document if it was deleted
-    const deletedFilenames = selectedDocs.map(filename => `/files/${filename}`);
-    if (deletedFilenames.includes(currentDoc)) {
-      currentDoc = null;
-      const container = document.getElementById('adobe-dc-view');
-      if (container) {
-        container.innerHTML = '';
-      }
-      updateCurrentDocName();
-    }
-
-  } catch (error) {
-    console.error('Bulk delete error:', error);
-    toast(`Failed to delete documents: ${error.message}`, 'error');
-
-    // Restore button state
-    const deleteBtn = document.querySelector('#deleteAllConfirmationModal button:last-child');
-    if (deleteBtn) {
-      deleteBtn.disabled = false;
-      deleteBtn.innerHTML = `
-        <i class="fas fa-trash mr-2"></i>Delete 
-      `;
-    }
-  }
+  console.log('Test completed. Check console for any errors.');
 }
